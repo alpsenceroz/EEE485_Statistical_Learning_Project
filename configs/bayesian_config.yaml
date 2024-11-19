@@ -1,0 +1,2 @@
+model_type: "BAYESIAN"
+batch_size: 100
