@@ -1,5 +1,7 @@
 
 import math
+import pickle
+from tqdm import tqdm
 class NaiveBayesianClassifier:
     # """_summary_
     # This is a naive bayesian classifier that uses the naive bayesian algorithm to classify data.
@@ -19,6 +21,17 @@ class NaiveBayesianClassifier:
         self.smoothing_factor = smoothing_factor
         self.num_unique_features = {}
         self.num_examples = 0
+
+
+    def save(self, path):
+        with open(path, 'wb') as f:
+            pickle.dump(self, f, pickle.HIGHEST_PROTOCOL)
+    
+
+    def load(self, path):
+        with open(path, 'rb') as f:
+            tmp_dict = pickle.load(f)
+            self.__dict__.update(tmp_dict.__dict__)
 
 
     def fit(self, X_train, y_train):
@@ -57,10 +70,52 @@ class NaiveBayesianClassifier:
                 for feature in set(features):
                     self.feature_probs[label][feature_index][feature] = \
                         (len([f for f in features if f == feature]) + self.smoothing_factor) \
-                        / (self.num_examples + self.smoothing_factor * self.num_unique_features[feature_index])
+                        / (len(features) + self.smoothing_factor * self.num_unique_features[feature_index])
 
 
-    def predict(self, X_test):
+    def fit_new(self, X_train, y_train):
+        feature_counts = {}
+        feature_unique_lists = {}
+        self.class_counts = {}
+        
+        # iterate over all examples and get statistics
+        print(f"Getting statistics")
+        for example, label in tqdm(zip(X_train, y_train), total=len(X_train)):
+            self.class_counts[label] = self.class_counts.get(label, 0) + 1
+            for feature_index, feature in enumerate(example):
+                feature = feature.item()
+                feature_counts[label] = feature_counts.get(label, {})
+                feature_counts[label][feature_index] = feature_counts[label].get(feature_index, {})
+                feature_counts[label][feature_index][feature] = feature_counts[label][feature_index].get(feature, 0) + 1
+                feature_unique_lists[feature_index] = feature_unique_lists.get(feature_index, [])
+                if feature not in feature_unique_lists[feature_index]:
+                    feature_unique_lists[feature_index].append(feature)
+                
+        # calculate unique number of features for the Laplacian smoothing
+        print(f"Calculating number of unique features")
+        for feature_index in range(self.num_features):
+            self.num_unique_features[feature_index] = len(feature_unique_lists.get(feature_index, []))
+            
+        # calculate probabilities
+        print(f"Calculating probabilities")
+        for label in self.class_counts.keys():
+            print(f"Calculating for label: {label}")
+            self.label_probs[label] = self.class_counts[label] / len(X_train)
+            for feature_index in range(self.num_features):
+                print(f"Calculating for feature index: {feature_index}")
+                self.feature_probs[label] = self.feature_probs.get(label, {})
+                self.feature_probs[label][feature_index] = self.feature_probs[label].get(feature_index, {})
+                for feature, count in feature_counts[label][feature_index].items():
+                    # print(f"Calculating for feature: {feature}")
+                    # print(f"Count: {count}")
+                    self.feature_probs[label][feature_index][feature] = (count + self.smoothing_factor) / (self.class_counts[label] + self.smoothing_factor * self.num_unique_features[feature_index])
+        
+        
+        # print(self.feature_probs.keys())
+        # for label in self.feature_probs.keys():
+        #     print(label,self.feature_probs[label])
+
+    def predict(self, X_test, y_test):
         """predicts labels for given list of examples
 
         Args:
@@ -70,26 +125,24 @@ class NaiveBayesianClassifier:
             list: list of predicted labels
         """
         res = []
-        for ex_index, example in enumerate(X_test):
+        for example, label in tqdm(zip(X_test, y_test), total=len(X_test)):
             pred = None
-            max_prob = 0
+            max_prob = float('-inf')
             for label in self.label_probs.keys():
                 
                 if (label not in self.label_probs.keys()):
                     prob = 0
+                    print(f"Label {label} not in label probabilities")
                     break
                 
                 prob = self.label_probs[label]
                 
                 for feature_index, feature in enumerate(example):
+                    feature = feature.item()
                     if (feature_index not in self.feature_probs[label].keys()):
                         raise ValueError(f"Feature index {feature_index} not in feature probabilities for label {label}")
                     elif (feature not in self.feature_probs[label][feature_index].keys()):
-                        # print(
-                        #     f"0 probability at index {ex_index} of class {label} for feature {feature_index} and value {feature}"
-                        # )
-                        prob = prob + math.log(self.smoothing_factor / (self.num_unique_features[feature_index] * self.smoothing_factor + self.num_examples))
-                        break
+                        prob = prob + math.log(self.smoothing_factor / (self.num_unique_features[feature_index] * self.smoothing_factor + self.class_counts[label]))
                     else:
                         prob = prob + math.log(self.feature_probs[label][feature_index][feature])
 
@@ -98,7 +151,7 @@ class NaiveBayesianClassifier:
                     pred = label
             if pred is None:
                 # print(f"0 probability for example {ex_index}")
-                pred = "POSITIVE" # for zero frequency values, assume test results are positive
+                pred = 0# for zero frequency values, assume test results are zero
                 pass
             res.append(pred)
         return res

@@ -1,5 +1,3 @@
-import torch
-from torch.utils.data import DataLoader
 from torchvision.datasets import FashionMNIST
 import torchvision.transforms as T
 

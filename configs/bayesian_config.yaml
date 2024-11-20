@@ -1,2 +1,2 @@
 model_type: "BAYESIAN"
-batch_size: 100
+results_dir: "./results"
