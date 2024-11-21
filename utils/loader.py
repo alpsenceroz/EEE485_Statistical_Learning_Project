@@ -1,5 +1,6 @@
 from torchvision.datasets import FashionMNIST
 import torchvision.transforms as T
+import torch.nn.functional as F
 
 """
 FashionMNIST  contains 28x28 grayscale images of 10 categories.
@@ -18,7 +19,7 @@ Categories:
 """
 
 
-def get_datasets(integer_valued=False, flatten=False):
+def get_datasets(integer_valued=False, flatten=False):#, one_hot=False, num_classes=None):
     # transforms list
     transforms = [T.ToTensor()]
     
@@ -31,6 +32,13 @@ def get_datasets(integer_valued=False, flatten=False):
     
     if flatten:
         transforms.append(lambda x: x.view(-1))
+    
+    # if one_hot and num_classes is None:
+    #     raise ValueError("num_classes must be specified when one_hot is True")
+    # if one_hot:
+    #     transforms.extend([
+    #         lambda x: x.long(),
+    #         lambda x: F.one_hot(x, num_classes=num_classes)])
     
     # create datasets
     train_data = FashionMNIST(

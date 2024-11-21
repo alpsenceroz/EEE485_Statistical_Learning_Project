@@ -1,5 +1,5 @@
 model_type: "MLP"
 batch_size: 64
-epochs: 10
-learning_rate: 0.001
+epochs: 200
+learning_rate: 0.03
 results_dir: "./results"

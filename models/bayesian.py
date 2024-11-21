@@ -56,14 +56,14 @@ class NaiveBayesianClassifier:
             self.num_unique_features[feature_index] = len(set(features))
 
         for label in range(self.num_features):
-            print(f"calculating for label: {label}")
+            # print(f"calculating for label: {label}")
             # calculate P(Y) for each class
             class_examples = [ X_train[i] for i in range(self.num_examples) if y_train[i] == label ]
             self.label_probs[label] = len(class_examples) / self.num_examples 
             
             # calculate feature probability for given class c = P(xi | Y) with Laplace smoothing
             for feature_index in range(len(X_train[0])):
-                print(f'calculatin for feature: {feature_index}')
+                # print(f'calculatin for feature: {feature_index}')
                 features = [example[feature_index] for example in class_examples]
                 self.feature_probs[label][feature_index] = {}
 
@@ -99,10 +99,10 @@ class NaiveBayesianClassifier:
         # calculate probabilities
         print(f"Calculating probabilities")
         for label in self.class_counts.keys():
-            print(f"Calculating for label: {label}")
+            # print(f"Calculating for label: {label}")
             self.label_probs[label] = self.class_counts[label] / len(X_train)
             for feature_index in range(self.num_features):
-                print(f"Calculating for feature index: {feature_index}")
+                # print(f"Calculating for feature index: {feature_index}")
                 self.feature_probs[label] = self.feature_probs.get(label, {})
                 self.feature_probs[label][feature_index] = self.feature_probs[label].get(feature_index, {})
                 for feature, count in feature_counts[label][feature_index].items():

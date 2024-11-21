@@ -24,7 +24,7 @@ class SequentialModel:
     def backward(self, dL_do, lr):
         dL_dV = dL_do
         for layer in reversed(self.layers):
-            print("dL_dV.shape", dL_dV.shape)
+            # print("dL_dV.shape", dL_dV.shape)
             dL_dV = layer.backward(dL_dV, lr)
             
     def save(self, path):
