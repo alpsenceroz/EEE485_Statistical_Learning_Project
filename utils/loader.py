@@ -1,6 +1,8 @@
 from torchvision.datasets import FashionMNIST
 import torchvision.transforms as T
 import torch.nn.functional as F
+from torch.utils.data import Subset
+import random
 
 """
 FashionMNIST  contains 28x28 grayscale images of 10 categories.
@@ -41,13 +43,12 @@ def get_datasets(integer_valued=False, flatten=False):#, one_hot=False, num_clas
     #         lambda x: F.one_hot(x, num_classes=num_classes)])
     
     # create datasets
-    train_data = FashionMNIST(
+    full_train_data = FashionMNIST(
         root='./data', 
         train=True, 
         download=True, 
         transform=T.Compose(transforms)
     )
-    
     test_data = FashionMNIST(
         root='./data', 
         train=False, 
@@ -55,7 +56,32 @@ def get_datasets(integer_valued=False, flatten=False):#, one_hot=False, num_clas
         transform=T.Compose(transforms)
     )
     
-    return train_data, test_data
+    
+    # Bucket images by class
+    class_buckets = {i: [] for i in range(10)}  # One bucket for each class
+    for idx, (_, label) in enumerate(full_train_data):
+        class_buckets[label].append(idx)
+
+    # Shuffle each bucket
+    # Set a random seed for reproducibility
+    RANDOM_SEED = 42 # for reproductibility
+    random.seed(RANDOM_SEED)
+    for bucket in class_buckets.values():
+        random.shuffle(bucket)
+
+    # Sample 1000 images per class for the validation set
+    val_indices = []
+    for class_label, indices in class_buckets.items():
+        val_indices.extend(indices[:1000])  # Take the first 1000 images per class
+
+    # Create validation and remaining training datasets
+    train_indices = list(set(range(len(full_train_data))) - set(val_indices))
+
+    train_data = Subset(full_train_data, train_indices)
+    val_data = Subset(full_train_data, val_indices)
+    
+
+    return train_data, val_data, test_data, full_train_data
 # def get_dataloaders(dataset, batch_size=64):
    
     

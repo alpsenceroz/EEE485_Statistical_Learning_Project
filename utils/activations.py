@@ -70,14 +70,14 @@ class Activation:
     def __call__(self, x):
         return self.forward(x)
 
-class SoftmaxActivation(Activation):
-    def __init__(self, activation, derivative):
-        super().__init__(activation, derivative)
+# class SoftmaxActivation(Activation):
+#     def __init__(self, activation, derivative):
+#         super().__init__(activation, derivative)
     
-    def backward(self, dE_dX, lr):
-        derivative = self.derivative(self.input)
-        res = torch.bmm(derivative, dE_dX.unsqueeze(2)).squeeze(2)
-        return res
+#     def backward(self, dE_dX, lr):
+#         derivative = self.derivative(self.input)
+#         res = torch.bmm(derivative, dE_dX.unsqueeze(2)).squeeze(2)
+#         return res
         
 # ReLU = Activation(relu, relu_derivative)
 # Sigmoid = Activation(sigmoid, sigmoid_derivative)

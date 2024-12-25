@@ -2,7 +2,7 @@ import torch
 
 
 class Linear:
-    def __init__(self, in_features, out_features):
+    def __init__(self, in_features, out_features, initialization='he'):
         """
         input = n x dl
         weights = dl x dh
@@ -10,9 +10,21 @@ class Linear:
         output = n x dh
         """
         # self.weights = torch.randn(out_features, in_features)
-        self.weights = torch.randn(in_features, out_features)
-        self.bias = torch.randn(out_features)
+        # self.weights = torch.randn(in_features, out_features)
+        # self.bias = torch.randn(out_features)
+        if initialization == 'he':
+            std = torch.sqrt(torch.tensor(2.0 / in_features))
+            self.weights = torch.randn(in_features, out_features) * std
+        
+        elif initialization == 'xavier':
+            limit = torch.sqrt(torch.tensor(1.0 / in_features))
+            self.weights = torch.randn(in_features, out_features) * limit
+        
+        else:
+            raise ValueError(f"Unknown initialization method: {initialization}")
+
         # self.bias = torch.unsqueeze(self.bias, 1)
+        self.bias = torch.randn(out_features)
         self.bias = torch.unsqueeze(self.bias, 0)
         self.input = None
         
@@ -58,7 +70,7 @@ class Linear:
 def pad(X, padding=0):
     # if len(X.shape) == 2: # H x W
     row, cols = X.shape[-2], X.shape[-1]
-    padded_matrix = torch.zeros((*X.shape[:-2], row+2*padding, cols+2*padding), dtype=X.dtype)
+    padded_matrix = torch.zeros((*X.shape[:-2], row+2*padding, cols+2*padding), dtype=X.dtype).to(X.device)
     padded_matrix[..., padding:padding+row, padding:padding+cols] = X
     return padded_matrix
     # elif len(X.shape) == 4: # B x C x H x W
@@ -91,6 +103,8 @@ def dilate(X, dilation_size):
     
     return dilated_matrix
 
+
+
 def corr_2d(X:torch.Tensor, K:torch.Tensor, corr_type="valid", stride=1):
     # TODO: is it proper to include stride for this method?
     if corr_type == "valid":
@@ -107,22 +121,73 @@ def corr_2d(X:torch.Tensor, K:torch.Tensor, corr_type="valid", stride=1):
     
     out = torch.zeros((out_rows, out_cols), dtype=X.dtype)
     
+    # This thing is too slow!
     for j in range(out_cols):
         for i in range(out_rows):
             window = X_pad[..., i*stride:i*stride+K.shape[-2], j*stride:j*stride+K.shape[-1]]
             out[i, j] = (window * K).sum()
     
     return out
+            
+def corr_2d_faster(X:torch.Tensor, K:torch.Tensor, corr_type="valid", stride=1):
+    if corr_type == "valid":
+        X_pad= X.clone()
+    elif corr_type == "same":
+        X_pad = pad(X, K.shape[-1]//2)
+    elif corr_type == "full":
+        X_pad = pad(X, K.shape[-1]-1)
+        
+    # patches = X_pad.unfold(-2, K.shape[-2], stride).unfold(-2, K.shape[-1], stride)
+    # out = (patches * K).sum(dim=(-1, -2)).squeeze(0)
+
+    C, H, W = X_pad.shape
+    _, K_, K_ = K.shape
+
+    # Unfold A into sliding patches of size (C, K, K)
+    patches = X_pad.unfold(1, K_, 1).unfold(2, K_, 1)  # Shape: (C, H_out, W_out, K, K)
+    H_out, W_out = patches.shape[1], patches.shape[2]
+
+    # Reshape patches to (H_out * W_out, C, K, K)
+    patches = patches.permute(1, 2, 0, 3, 4).reshape(-1, C, K_, K_)
+
+    # Reshape B to (1, C, K, K) for broadcasting
+    K = K.unsqueeze(0)  # Shape: (1, C, K, K)
+
+    # Compute element-wise multiplication and sum over (C, K, K)
+    result = (patches * K).sum(dim=(1, 2, 3))  # Shape: (H_out * W_out)
+
+    # Reshape the result back to (H_out, W_out)
+    result = result.view(H_out, W_out)
+
+    return result
+
+    
     
     
 def conv_2d(X, K, conv_type="valid"):
     K_rotated = torch.flip(K, [-2,-1]) # rotate the kernel 180 degrees
     return corr_2d(X, K_rotated, conv_type)
 
+def conv_2d_faster(X, K, conv_type="valid"):
+    K_rotated = torch.flip(K, [-2,-1]) # rotate the kernel 180 degrees
+    return corr_2d_faster(X, K_rotated, conv_type)
+
     
 class Conv:
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0):
-        self.kernels = torch.randn(out_channels, in_channels, kernel_size, kernel_size) # C_out x C_in x K X K
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, initialization='he'):
+        # self.kernels = torch.randn(out_channels, in_channels, kernel_size, kernel_size) # C_out x C_in x K X K
+        
+        if initialization == 'he':
+            std = torch.sqrt(torch.tensor(2.0 / (in_channels * kernel_size * kernel_size)))
+            self.kernels = torch.randn(out_channels, in_channels, kernel_size, kernel_size) * std
+        
+        elif initialization == 'xavier':
+            limit = torch.sqrt(torch.tensor(1.0 / (in_channels * kernel_size * kernel_size)))
+            self.kernels = torch.randn(out_channels, in_channels, kernel_size, kernel_size) * limit
+        
+        else:
+            raise ValueError(f"Unknown initialization method: {initialization}")
+
         # Bias should be broadcastable to output feature maps
         self.biases = torch.randn(out_channels, 1, 1) # C_out x 1 x 1
         
@@ -150,7 +215,7 @@ class Conv:
             X_outputs = []
             
             for kernel, bias in zip(self.kernels, self.biases):
-                correlated = corr_2d(X=X_i_padded, K=kernel, stride=self.stride)
+                correlated = corr_2d_faster(X=X_i_padded, K=kernel, stride=self.stride)
                 bias_added = correlated + bias
                 X_outputs.append(bias_added)
             
@@ -164,6 +229,10 @@ class Conv:
         
     def __call__(self, x):
         return self.forward(x)
+    
+    def to(self, device):
+        self.kernels = self.kernels.to(device)
+        self.biases = self.biases.to(device)
 
 
     # https://www.youtube.com/watch?v=Lakz2MoHy6o
@@ -171,32 +240,52 @@ class Conv:
         dL_dV_K = dL_dV.clone()
         dL_dV_X = dL_dV.clone()
         
-        dL_dK = torch.zeros_like(self.kernels)
-        dL_dX = torch.zeros(self.padded_input.shape[1:]) # exclude the batch dim  -> C x H x W
+        dL_dK = torch.zeros_like(self.kernels).to(self.kernels.device)
+        dL_dX = torch.zeros(self.padded_input.shape).to(self.padded_input.device) # exclude the batch dim  -> C x H x W
         
         if self.stride != 1:
             dL_dV_K = dilate(dL_dV, self.stride-1)
             dL_dV_X = dL_dV_K.clone()
             
-        dL_db = torch.sum(dL_dV, dim=(1,2))
+        dL_db = torch.sum(dL_dV, dim=(-2,-1))
         
-        # dL_dK
-        for k, X_i in enumerate(self.padded_input):
-            for i, K_i in enumerate(self.kernels):
-                for j, K_i_j in enumerate(K_i): # channel
-                    dL_dK[i, j] += conv_2d(X_i[j], dL_dV_K[i])
+        dL_dK
+        for c1 in range(self.in_channels):
+            for c2 in range(self.out_channels):
+                temp_c1s = self.padded_input[:, c1, :, :] # b x H x W
+                temp_c2s = dL_dV_K[:, c2, :, :] # b x H' x W'
+                dL_dK[c2, c1] += corr_2d_faster(temp_c1s, temp_c2s)
+                # for n in range(len(self.padded_input)):
+                #     # repeating_kernel = self.kernels[c2, c1].unsqueeze(0).repeat(len(self.padded_input), 1, 1) # b x K x K
+                #     # dL_dX[n, c1] += conv_2d_faster(temp_c2s, repeating_kernel, conv_type='full')
                 
+                
+                
+                
+        for n in range(len(self.padded_input)):
+            for c1 in range(self.in_channels):
+                temp_c1_kernels = self.kernels[:, c1, :, :]
+                dL_dX[n, c1] += conv_2d_faster(dL_dV_K[n, :, :, :], temp_c1_kernels, conv_type='full')
+                    
 
-        #dL_dX
-        for i, K_i in enumerate(self.kernels):
-            for j, K_i_j in enumerate(K_i): # channel
-                    dL_dX[j] += corr_2d(dL_dV_X[j], K_i_j, corr_type='full')
-                    
-                    
+            
+        
+        # for n in range(len(self.padded_input)):
+        #     for c1 in range(self.in_channels):
+        #         for c2 in range(self.out_channels):
+        #             temp_c2s = dL_dV_K[:, c2, :, :] # b x H' x W'
+        #             repeating_kernel = self.kernels[c2, c1].unsqueeze(0).repeat(len(self.padded_input), 1, 1) # b x K x K
+        #             dL_dX[n, c1] += conv_2d_faster(temp_c2s, repeating_kernel, conv_type='full')
+        
+        # for n in range(len(self.padded_input)):
+        #     for c1 in range(self.in_channels):
+        #         for c2 in range(self.out_channels):
+        #             dL_dK[c2, c1] += corr_2d_faster(self.padded_input[n][c1].unsqueeze(0), dL_dV_K[n][c2].unsqueeze(0))
+        #             dL_dX[n, c1] += conv_2d_faster(dL_dV_X[n][c2].unsqueeze(0), self.kernels[c2][c1].unsqueeze(0), conv_type='full')
         
         # updates
-        self.kernels -= lr * dL_dK
-        self.biases -= lr * dL_db.unsqueeze(-1).unsqueeze(-1)
+        self.kernels -= lr * torch.sum(dL_dK, dim=0)
+        self.biases -= lr * torch.sum(dL_db, dim=0).unsqueeze(-1).unsqueeze(-1)
         
         if self.padding != 0:
             dL_dX = dL_dX[...,  self.padding: -self.padding, self.padding: -self.padding]
@@ -225,9 +314,9 @@ class Pooling():
         out_rows = (X.shape[2] - self.kernel_size) // self.stride + 1
         out_cols = (X.shape[3] - self.kernel_size) // self.stride + 1
         
-        out = torch.zeros((X.shape[0], X.shape[1], out_rows, out_cols), dtype=X.dtype)
+        out = torch.zeros((X.shape[0], X.shape[1], out_rows, out_cols), dtype=X.dtype).to(X.device)
         
-        self.backprop_value = torch.zeros_like(X[0])
+        self.backprop_value = torch.zeros_like(X)
 
         
         for j in range(out_rows):
@@ -238,19 +327,21 @@ class Pooling():
                 if self.pooling_type == 'max':
                     out[:, :, i, j] = torch.amax(window, dim=(2, 3))  # This gives us B x C
                     
-                    self.backprop_value[:, i*self.stride:i*self.stride+self.kernel_size, j*self.stride:j*self.stride+ self.kernel_size]+=torch.sum(window == out[:, :, i, j].unsqueeze(-1).unsqueeze(-1), dim=0)
+                    self.backprop_value[..., i*self.stride:i*self.stride+self.kernel_size, j*self.stride:j*self.stride+ self.kernel_size]+=torch.sum(window == out[:, :, i, j].unsqueeze(-1).unsqueeze(-1), dim=0)
                     pass
                     
                 elif self.pooling_type == 'avg':
                     out[:, :, i, j] = torch.mean(window, dim=(2,3))
-                    self.backprop_value[:, i*self.stride:i*self.stride+ self.kernel_size, j*self.stride:j*self.stride+ self.kernel_size] += 1/(self.kernel_size ** 2)
+                    self.backprop_value[..., i*self.stride:i*self.stride+ self.kernel_size, j*self.stride:j*self.stride+ self.kernel_size] += 1/(self.kernel_size ** 2)
                     
         return out
     def __call__(self, X):
         return self.forward(X)
     
     def backward(self, dL_dV, lr):
-        return dL_dV * self.backprop_value
+        dL_dV_upsampled = dL_dV.repeat_interleave(self.kernel_size, dim=2)\
+                           .repeat_interleave(self.kernel_size, dim=3)
+        return dL_dV_upsampled * self.backprop_value
         
         
         
@@ -263,8 +354,8 @@ class Flatten():
     def __call__(self, X):
         return self.forward(X)
     
-    def backward(self, dL_dV: torch.Tensor):
-        return dL_dV.view(self.input_shape[1:])
+    def backward(self, dL_dV: torch.Tensor, lr):
+        return dL_dV.view(self.input_shape)
         
     
             

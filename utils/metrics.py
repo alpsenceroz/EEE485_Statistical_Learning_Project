@@ -1,5 +1,57 @@
 import torch
 
+
+def measure_metrics_fast(preds, labels):
+    # ... existing imports ...
+    
+    stats = {}
+    classes = sorted(list(set(labels.cpu().numpy())))  # Sort to ensure consistent ordering
+    num_classes = len(classes)
+    
+    # Calculate accuracy using torch operations
+    acc = (preds == labels).float().mean().item()
+    
+    # Create one-hot matrices for predictions and labels
+    pred_one_hot = torch.zeros(len(preds), num_classes, device=preds.device)
+    pred_one_hot.scatter_(1, preds.unsqueeze(1), 1)
+    
+    label_one_hot = torch.zeros(len(labels), num_classes, device=labels.device)
+    label_one_hot.scatter_(1, labels.unsqueeze(1), 1)
+    
+    # Calculate TP, FP, TN, FN for all classes at once
+    tp = torch.sum(pred_one_hot * label_one_hot, dim=0)
+    fp = torch.sum(pred_one_hot * (1 - label_one_hot), dim=0)
+    fn = torch.sum((1 - pred_one_hot) * label_one_hot, dim=0)
+    tn = torch.sum((1 - pred_one_hot) * (1 - label_one_hot), dim=0)
+    
+    # Calculate metrics for all classes at once
+    prec = tp / (tp + fp)
+    prec[torch.isnan(prec)] = 0  # Handle division by zero
+    
+    rec = tp / (tp + fn)
+    rec[torch.isnan(rec)] = 0
+    
+    f1 = 2 * (prec * rec) / (prec + rec)
+    f1[torch.isnan(f1)] = 0
+    
+    # Store individual class metrics
+    for i, label in enumerate(classes):
+        stats[label] = {
+            "tp": tp[i].item(), "fp": fp[i].item(),
+            "tn": tn[i].item(), "fn": fn[i].item(),
+            "prec": prec[i].item(), "rec": rec[i].item(),
+            "f1": f1[i].item()
+        }
+    
+    # Calculate averages
+    precs_avg = prec.mean().item()
+    recs_avg = rec.mean().item()
+    f1s_avg = f1.mean().item()
+    
+    print(f"Accuracy: {acc}, Precision: {precs_avg}, Recall: {recs_avg}, F1: {f1s_avg}")
+    return acc, precs_avg, recs_avg, f1s_avg
+
+
 def measure_metrics(preds, labels):
     stats = {}
     classes = set(labels)
@@ -12,6 +64,7 @@ def measure_metrics(preds, labels):
         fp = torch.sum(torch.logical_and(preds == label, labels != label))
         fn = torch.sum(torch.logical_and(preds != label, labels == label))
         tn = torch.sum(torch.logical_and(preds != label, labels != label))
+        
         # tp = sum(1 for p, l in zip(preds, labels) if (p == label and l == label) )
         # fp = sum(1 for p, l in zip(preds, labels) if (p == label and l != label) )
         # tn = sum(1 for p, l in zip(preds, labels) if (p != label and l != label) )
@@ -33,7 +86,7 @@ def measure_metrics(preds, labels):
     f1s /= len(classes)
     
     acc = sum(1 for pred, label in zip(preds, labels) if pred == label) / len(preds)
-    print(f"Accuracy: {acc}, Precision: {prec}, Recall: {rec}, F1: {f1}")
+    print(f"Accuracy: {acc}, Precision: {precs}, Recall: {recs}, F1: {f1s}")
     return acc, precs, recs, f1s
 
 # def accuracy(preds, labels):

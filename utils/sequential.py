@@ -1,7 +1,7 @@
 import pickle
 
 from utils.activations import Activation
-from utils.layers import Linear
+from utils.layers import Linear, Conv
 
 
 class SequentialModel:
@@ -18,7 +18,7 @@ class SequentialModel:
     
     def to(self, device):
         for layer in self.layers:
-            if isinstance(layer, Linear):
+            if isinstance(layer, Linear) or isinstance(layer, Conv):
                 layer.to(device)
     
     def backward(self, dL_do, lr):
@@ -34,7 +34,8 @@ class SequentialModel:
     def load(self, path):
         with open(path, 'rb') as f:
             tmp_dict = pickle.load(f)
-            self.layers = tmp_dict["layers"]
+            print(tmp_dict.layers)
+            self.layers = tmp_dict.layers
 
     
     
